@@ -221,7 +221,7 @@ class Server:
             return
 
         target_nickname = args[0]
-        if target_clients := self.find_client_by_nickname(receiver_nickname):
+        if target_clients := self.find_client_by_nickname(target_nickname):
             for target_client in target_clients:
                 if not await target_client.already_voted(sender.nickname, 4 * 60 * 60):
                     await target_client.add_warning(sender.nickname)
