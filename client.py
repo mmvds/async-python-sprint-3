@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from typing import Coroutine, AsyncGenerator
 
 import aiosqlite
 
@@ -11,7 +12,8 @@ class Client:
     """
     Class of client connections
     """
-    def __init__(self, reader, writer):
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self.reader = reader
         self.writer = writer
         self.nickname = None
@@ -20,7 +22,7 @@ class Client:
         self.warnings = 0
         self.peername = writer.get_extra_info('peername')
 
-    async def send(self, message):
+    async def send(self, message: str) -> Coroutine:
         """
         Send message to self
         :param message: text of message
@@ -33,7 +35,7 @@ class Client:
             self.writer.write(message.encode() + b'\n')
             await self.writer.drain()
 
-    async def send_history(self, message_expiry: int, message_limit: int):
+    async def send_history(self, message_expiry: int, message_limit: int) -> Coroutine:
         """
         Send history of last messages
         :param message_expiry: max message live time
@@ -57,7 +59,7 @@ class Client:
                 else:
                     await self.send(f'{sender}: {message}')
 
-    async def load_user_info(self, nickname: str):
+    async def load_user_info(self, nickname: str) -> Coroutine:
         """
         Load users warning info
         :param nickname: user's nickname
@@ -84,19 +86,26 @@ class Client:
                 result = await cursor.fetchone()
         return result is not None
 
-    async def read_messages(self):
+    async def read_messages(self) -> AsyncGenerator:
         try:
+            current_message = ''
             while True:
-                data = await self.reader.read(1000)
-                if not data:
+                char = await self.reader.read(1)
+                if not char:
                     continue
-                message = data.decode().strip()
-                self.last_message_time = int(time.time())
-                yield message
+                char = char.decode()
+                if char == '\n':  # to support windows telnet
+                    message = current_message.strip()
+                    current_message = ''
+                    if message:
+                        self.last_message_time = int(time.time())
+                        yield message
+                else:
+                    current_message += char
         except asyncio.CancelledError as err:
             logger.error(f'Connection cancelled \n{err}')
 
-    async def add_warning(self, sender_nickname: str):
+    async def add_warning(self, sender_nickname: str) -> Coroutine:
         """
         Add warning for a receiver
         :param self: voteban receiver

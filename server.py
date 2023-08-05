@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from typing import Coroutine
 
 import aiosqlite
 
@@ -39,14 +40,14 @@ class Server:
     Server class to create simple chat server
     """
 
-    def __init__(self, host: str = '127.0.0.1', port: int = 8000):
+    def __init__(self, host: str = '127.0.0.1', port: int = 8000, message_limit: int = 20, message_expiry: int = 3600):
         self.host = host
         self.port = port
         self.clients = {}
-        self.message_limit = 20
-        self.message_expiry = 3600
+        self.message_limit = message_limit
+        self.message_expiry = message_expiry
 
-    async def listen(self):
+    async def listen(self) -> Coroutine:
         """
         Run server forever
         :return:
@@ -58,12 +59,12 @@ class Server:
         )
 
         addr = server.sockets[0].getsockname()
-        logger.info(f'Server started on {addr}')
+        logger.info(f'Server started on {addr} message limit {self.message_limit}, expiry {self.message_expiry}')
 
         async with server:
             await server.serve_forever()
 
-    async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> Coroutine:
         """
         Handle client connection
         :param reader: client StreamReader
@@ -96,7 +97,7 @@ class Server:
             writer.close()
             await writer.wait_closed()
 
-    async def save_message(self, sender_nickname, receiver_nickname, message):
+    async def save_message(self, sender_nickname: str, receiver_nickname: str, message: str) -> Coroutine:
         """
         Save message to Database
         :param sender_nickname:
@@ -111,7 +112,7 @@ class Server:
                                        VALUES (?, ?, ?, ?)''', (sender_nickname, receiver_nickname, message, timestamp))
                 await connection.commit()
 
-    async def process_message(self, sender: Client, message: str):
+    async def process_message(self, sender: Client, message: str) -> Coroutine:
         """
         Process text/command messages
         :param sender:
@@ -121,8 +122,8 @@ class Server:
         if not message.startswith('/'):
             message = f'/send {message}'
         command, *args = message[1:].split(' ')
-        if command not in ['register', 'connect'] and not sender.nickname:
-            await sender.send('Please /connect or /register firstly')
+        if command not in ['register', 'connect', 'help'] and not sender.nickname:
+            await sender.send('Please use /connect or /register firstly. Use /help to get a full list of commands')
         elif command == 'send':
             await self.handle_send_command(sender, args)
         elif command == 'private':
@@ -140,7 +141,7 @@ class Server:
         else:
             await sender.send('Unknown command. Use /help to get a list')
 
-    async def handle_register_command(self, sender: Client, args: list):
+    async def handle_register_command(self, sender: Client, args: list) -> Coroutine:
         if len(args) != 2:
             await sender.send('Usage: /register <nickname> <password>')
             return
@@ -158,7 +159,7 @@ class Server:
                     await sender.send('Registered')
                     sender.nickname = nickname
 
-    async def handle_connect_command(self, sender: Client, args: list):
+    async def handle_connect_command(self, sender: Client, args: list) -> Coroutine:
         if len(args) != 2:
             await sender.send('Usage: /connect <nickname> <password>')
             return
@@ -179,7 +180,7 @@ class Server:
                 else:
                     await sender.send('Invalid nickname or password.')
 
-    async def handle_send_command(self, sender: Client, args: list):
+    async def handle_send_command(self, sender: Client, args: list) -> Coroutine:
         if not args:
             await sender.send('Usage: /send <message>')
             return
@@ -188,7 +189,7 @@ class Server:
         await self.broadcast(f'{sender.nickname}: {message}')
         await self.save_message(sender.nickname, None, message)
 
-    async def handle_private_command(self, sender: Client, args: list):
+    async def handle_private_command(self, sender: Client, args: list) -> Coroutine:
         if len(args) < 2:
             await sender.send('Usage: /private <nickname> <message>')
             return
@@ -205,7 +206,7 @@ class Server:
             else:
                 await sender.send(f'User "{receiver_nickname}" not found or offline.')
 
-    async def handle_help_command(self, sender: Client):
+    async def handle_help_command(self, sender: Client) -> Coroutine:
         await sender.send('''/help - Available commands: 
         /register <nickname> <password> - Register new user
         /connect <nickname> <password> - Auth in the chat
@@ -213,9 +214,8 @@ class Server:
         /private <nickname> <message> - Send private message to nickname
         /voteban <nickname> - Vote for 4 hours ban for nickname
         /status - Show amount of active connections''')
-        return
 
-    async def handle_voteban_command(self, sender: Client, args: list):
+    async def handle_voteban_command(self, sender: Client, args: list) -> Coroutine:
         if len(args) != 1:
             await sender.send('Usage: /voteban <nickname>')
             return
@@ -238,8 +238,8 @@ class Server:
         else:
             await sender.send(f'User "{target_nickname}" not found or offline.')
 
-    async def broadcast(self, message: str):
-        for addr, client in self.clients.items():
+    async def broadcast(self, message: str) -> Coroutine:
+        for client in self.clients.values():
             if not client.banned_until:
                 await client.send(message)
 
@@ -247,7 +247,7 @@ class Server:
         return [client for client in self.clients.values() if client.nickname == nickname]
 
 
-async def main(host: str, port: int):
+async def main(host: str, port: int) -> Coroutine:
     server = Server(host=host, port=port)
     await initialize_database()
     await server.listen()
